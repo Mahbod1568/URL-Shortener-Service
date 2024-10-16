@@ -1,0 +1,72 @@
+import os
+import string
+import random
+import sqlite3
+from flask import Flask, request, redirect, render_template
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Database setup
+DATABASE = 'url_shortener.db'
+
+def get_db_connection():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def create_db():
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS urls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            original_url TEXT NOT NULL,
+            short_url TEXT NOT NULL UNIQUE
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Generate a random string for the shortened URL
+def generate_short_url():
+    characters = string.ascii_letters + string.digits
+    short_url = ''.join(random.choice(characters) for _ in range(6))
+    return short_url
+
+# Route for the home page (input form)
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+# Route for shortening the URL
+@app.route('/shorten', methods=['POST'])
+def shorten_url():
+    original_url = request.form['original_url']
+    
+    conn = get_db_connection()
+    short_url = generate_short_url()
+    
+    # Insert the original URL and generated short URL into the database
+    conn.execute('INSERT INTO urls (original_url, short_url) VALUES (?, ?)', (original_url, short_url))
+    conn.commit()
+    conn.close()
+    
+    return render_template('shortened.html', short_url=short_url)
+
+# Route for redirecting short URL to the original URL
+@app.route('/<short_url>')
+def redirect_to_original(short_url):
+    conn = get_db_connection()
+    url_data = conn.execute('SELECT original_url FROM urls WHERE short_url = ?', (short_url,)).fetchone()
+    conn.close()
+    
+    if url_data:
+        return redirect(url_data['original_url'])
+    else:
+        return f"Error: URL not found for {short_url}", 404
+
+# Initialize the database
+if __name__ == '__main__':
+    if not os.path.exists(DATABASE):
+        create_db()
+    app.run(debug=True)
